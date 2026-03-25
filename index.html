@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vibe AI</title>
+
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <!-- face-api.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
+  <style>
+    body {
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      font-family: Arial;
+    }
+
+    video, canvas {
+      border-radius: 10px;
+      margin-top: 10px;
+    }
+
+    #responseBox {
+      margin-top: 20px;
+      padding: 15px;
+      background: #1e293b;
+      border-radius: 10px;
+      width: 60%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>Vibe AI</h1>
+
+<video id="video" width="640" height="480" autoplay muted></video>
+<canvas id="canvas" width="640" height="480"></canvas>
+
+<div id="responseBox">
+  <h3 id="emotion">Emotion: --</h3>
+  <p id="response">Waiting for detection...</p>
+</div>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const emotionText = document.getElementById("emotion");
+const responseText = document.getElementById("response");
+
+// 🎥 Start camera
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => video.srcObject = stream);
+
+// 🧠 Load face-api models
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models'),
+  faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models')
+]).then(startDetection);
+
+// 📊 Emotion → Response mapping
+function getResponse(emotion) {
+  switch(emotion) {
+    case "sad":
+      return "Hey… it’s okay. Take a small break and breathe.";
+    case "happy":
+      return "Nice! Keep that energy going 💪";
+    case "angry":
+      return "Pause. Don’t react instantly. Give yourself a moment.";
+    case "surprised":
+      return "That caught you off guard 😄";
+    case "neutral":
+      return "Steady mood. Maybe try something productive?";
+    default:
+      return "I’m here with you.";
+  }
+}
+
+// 🎯 Start detection loop
+function startDetection() {
+
+  const faceDetection = new FaceDetection({
+    locateFile: file =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+  });
+
+  faceDetection.setOptions({
+    model: "short",
+    minDetectionConfidence: 0.6
+  });
+
+  faceDetection.onResults(async (results) => {
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if (results.detections.length > 0) {
+      const box = results.detections[0].boundingBox;
+
+      const x = box.xCenter * canvas.width - (box.width * canvas.width)/2;
+      const y = box.yCenter * canvas.height - (box.height * canvas.height)/2;
+      const width = box.width * canvas.width;
+      const height = box.height * canvas.height;
+
+      ctx.strokeStyle = "lime";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, width, height);
+
+      // 🧠 Detect emotion using face-api
+      const detection = await faceapi.detectSingleFace(video,
+        new faceapi.TinyFaceDetectorOptions()
+      ).withFaceExpressions();
+
+      if (detection && detection.expressions) {
+
+        const expressions = detection.expressions;
+
+        // Get max emotion
+        const emotion = Object.keys(expressions)
+          .reduce((a, b) => expressions[a] > expressions[b] ? a : b);
+
+        emotionText.innerText = "Emotion: " + emotion;
+        responseText.innerText = getResponse(emotion);
+      }
+    }
+  });
+
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await faceDetection.send({ image: video });
+    },
+    width: 640,
+    height: 480
+  });
+
+  camera.start();
+}
+</script>
+
+</body>
+</html>
